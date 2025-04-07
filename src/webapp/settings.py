@@ -23,11 +23,25 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-g#_ts8jb%y@g)+pi(ou0ri#sy0ns9-9s38o)cxo+=+qkg4b&qb'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['172.20.10.3','192.168.56.1', 'localhost', '127.0.0.1', '.ngrok.io','.ngrok-free.app', 'testserver']
 
+# Add CSRF trusted origins for ngrok
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.ngrok-free.app',
+    'https://*.ngrok.io',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
 
+# Update CORS settings
+CORS_ALLOWED_ORIGINS = [
+    'https://*.ngrok-free.app',
+    'https://*.ngrok.io',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
 # Application definition
 
 INSTALLED_APPS = [
@@ -38,10 +52,18 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'base.apps.BaseConfig',
+    'api.apps.ApiConfig',
+    'rest_framework',
+    'corsheaders',
 ]
+
+# Session Configuration
+SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -64,6 +86,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
+            'builtins': ['django.templatetags.static', 'django.contrib.humanize.templatetags.humanize'],
         },
     },
 ]
@@ -80,6 +103,14 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'root',
+#         'USER' : 'root',
+#         'PASSWORD' : 'Tolusmysql031203!'
+#     }
+# }
 
 
 # Password validation
@@ -114,7 +145,7 @@ USE_TZ = True
 
 # settings.py
 
-# AUTH_USER_MODEL = 'base.CustomUser'
+AUTH_USER_MODEL = 'base.CustomUser'
 
 
 LOGIN_URL = 'login'
@@ -124,7 +155,20 @@ LOGIN_URL = 'login'
 
 STATIC_URL = 'static/'
 
+# REST Framework settings (if you're using DRF)
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_HEADERS = ['X-User-ID','Content-Type','X-CSRFToken']

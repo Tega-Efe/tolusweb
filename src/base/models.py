@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin, Group, Permission
 
 class CustomUserManager(BaseUserManager):
@@ -24,6 +25,7 @@ class CustomUserManager(BaseUserManager):
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=200, unique=True)
+    user_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     firstname = models.CharField(max_length=200, null=True)
     lastname = models.CharField(max_length=200, null=True)
     mobile = models.IntegerField(default=234)
@@ -54,13 +56,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return str(self.username)
 
-class Waterflow(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True, blank=True)
-    created = models.DateTimeField(auto_now_add=True)
-    title = models.CharField(max_length=200)
+# class Waterflow(models.Model):
+#     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True, blank=True)
+#     created = models.DateTimeField(auto_now_add=True)
+#     title = models.CharField(max_length=200)
 
-    def __str__(self):
-        return self.title
+#     def __str__(self):
+#         return self.title
 
-    class Meta:
-        order_with_respect_to = 'user'
+#     class Meta:
+#         order_with_respect_to = 'user'

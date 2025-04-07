@@ -1,8 +1,170 @@
-{% if request.user.is_authenticated %}
-<form id="logout-form" action="{% url 'logout' %}" method="POST">
-    {% csrf_token %}
-    <button type="submit">Logout</button>
-</form>
- {% else %}
-<a href="{% url 'login' %}">Login</a> {% endif %}
-<h1>Waterflow</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Water Distribution System</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+{% block content %}
+<style>
+    body {
+        background: linear-gradient(135deg, #1e3c72, #2a5298);
+        min-height: 100vh;
+    }
+
+    .dashboard-container {
+        position: fixed;
+        top: 76px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        overflow-y: auto;
+        padding: 20px;
+        scrollbar-width: thin;
+        scrollbar-color: #64b5f6 rgba(255, 255, 255, 0.1);
+    }
+
+    .dashboard-container::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .dashboard-container::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+    }
+
+    .dashboard-container::-webkit-scrollbar-thumb {
+        background: #64b5f6;
+        border-radius: 4px;
+    }
+
+    .dashboard-container::-webkit-scrollbar-thumb:hover {
+        background: #42a5f5;
+    }
+
+    .card {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: white;
+        height: 100%;
+        margin-bottom: 20px;
+        padding: 25px;
+    }
+
+    .card-title {
+        color: #e8f6ff;
+        font-weight: bold;
+        font-size: min(20px, 5vw);
+        margin-bottom: 15px;
+    }
+
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .dashboard-header h2 {
+        color: #e8f6ff;
+        font-weight: 600;
+        font-size: min(24px, 6vw);
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .flow-value {
+        font-weight: bold;
+        color: #64b5f6;
+        font-size: min(16px, 4.5vw);
+    }
+
+    .timestamp {
+        color: rgba(255, 255, 255, 0.7) !important;
+        font-size: min(14px, 4vw);
+    }
+
+    .btn {
+        background: linear-gradient(45deg, #2196f3, #64b5f6);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        padding: min(12px, 3vh);
+        font-size: min(16px, 4.5vw);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .btn:hover {
+        background: linear-gradient(45deg, #1976d2, #42a5f5);
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
+    }
+
+    .error {
+        background: rgba(255, 82, 82, 0.1);
+        border: 1px solid rgba(255, 82, 82, 0.3);
+        color: #ff8a80;
+        padding: 10px;
+        border-radius: 8px;
+        margin-top: 15px;
+    }
+</style>
+
+<div class="dashboard-container">
+    <div class="container">
+        <!-- Header -->
+        <div class="dashboard-header">
+            <h2>Welcome, {{ request.user.firstname }} {{ request.user.lastname }}!</h2>
+            {% if request.user.is_authenticated %}
+            <form id="logout-form" action="{% url 'logout' %}" method="POST" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn">
+                    Logout <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </form>
+            {% endif %}
+        </div>
+
+        <!-- Distribution Cards -->
+        <div class="row">
+            {% for key, value in api_data.items %}
+                {% if 'distribution' in key %}
+                <div class="col-lg-4 col-md-6 mb-4">
+                    <div class="card">
+                        <h5 class="card-title">Distribution {{ value.distributionID }}</h5>
+                        <p>Flow Rate: <span class="flow-value">{{ value.flowRate|floatformat:2|default:"N/A" }}</span> m³/h</p>
+                        <p>Volume: <span class="flow-value">{{ value.volume|floatformat:2|default:"N/A" }}</span> m³</p>
+                        <p>Sensor ID: <span class="flow-value">{{ value.sensor_id|default:"default" }}</span></p>
+                        <p class="timestamp">Last Updated: {{ value.created|date:"F d, Y • g:i A"|default:"Never" }}</p>
+                    </div>
+                </div>
+                {% endif %}
+            {% empty %}
+                <div class="col-12">
+                    <div class="card">
+                        <div class="text-center">
+                            <p class="text-muted">No distribution data available</p>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        
+
+        <!-- Error Display -->
+        {% if error %}
+        <div class="error mt-3">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            {{ error }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock content %}
