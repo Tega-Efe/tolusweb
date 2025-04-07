@@ -31,23 +31,36 @@ def getRoutes(request):
     return Response(routes)
 
 from rest_framework import status
-
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def saveSensorData(request):
     try:
         data = request.data if request.method == 'POST' else request.GET
+        
+        # Print incoming request data
+        print("\n----- Incoming Sensor Data -----")
+        print(f"Request Method: {request.method}")
+        print(f"Raw Data: {data}")
+        
         sensor_id = data.get('sensor_id')
         flow_rate = data.get('flowRate')
         volume = data.get('volume')
+        
+        # Print extracted values
+        print("\n----- Extracted Values -----")
+        print(f"Sensor ID: {sensor_id}")
+        print(f"Flow Rate: {flow_rate}")
+        print(f"Volume: {volume}")
 
         if not all([sensor_id, flow_rate, volume]):
+            print("\nError: Missing required fields")
             return Response({
                 'error': 'Missing required fields'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Convert sensor_id to distributionID (1-3)
         distribution_id = int(sensor_id)
+        print(f"\nConverted Distribution ID: {distribution_id}")
 
         distribution_data = {
             'distributionID': distribution_id,
@@ -55,18 +68,24 @@ def saveSensorData(request):
             'flowRate': float(flow_rate),
             'volume': float(volume)
         }
+        
+        print("\n----- Processed Data -----")
+        print(f"Distribution Data: {distribution_data}")
 
         serializer = FlowDataSerializer(data=distribution_data)
         if serializer.is_valid():
             serializer.save()
+            print("\nData saved successfully!")
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
+            print(f"\nValidation Error: {serializer.errors}")
             return Response({
                 'error': 'Validation failed',
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
+        print(f"\nException occurred: {str(e)}")
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
