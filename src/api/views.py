@@ -14,49 +14,93 @@ def getRoutes(request):
             'Endpoint': '/flow-data/',
             'method': 'GET, POST',
             'body': {
-                'flowRate1': 'float',
-                'volume1': 'float',
-                'flowRate2': 'float',
-                'volume2': 'float',
-                'flowRate3': 'float',
-                'volume3': 'float'
+                'user': 'integer',  # ForeignKey to CustomUser
+                'sensor_id': 'string',  # CharField with default='default'
+                'distributionID': 'integer',  # Required IntegerField
+                'flowRate': 'float',  # Optional FloatField
+                'volume': 'float',  # Optional FloatField
             },
-            'description': 'Gets and saves flow meter data'
+            'description': 'Gets and saves flow meter data for a single distribution point'
         },
+        {
+            'Endpoint': '/user-flow-data/',
+            'method': 'GET',
+            'description': 'Gets all flow data for the authenticated user'
+        }
     ]
     return Response(routes)
 
 from rest_framework import status
 
-
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
-def saveFlowData(request):
+def saveSensorData(request):
     try:
-        if request.method == 'POST':
-            data = request.data
-        else:
-            data = request.GET
+        data = request.data if request.method == 'POST' else request.GET
+        sensor_id = data.get('sensor_id')
+        flow_rate = data.get('flowRate')
+        volume = data.get('volume')
 
-        user_id = request.user.user_id  # Use the persistent UUID
-        sensor_id = data.get('sensor_id', 'default')
+        if not all([sensor_id, flow_rate, volume]):
+            return Response({
+                'error': 'Missing required fields'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Convert sensor_id to distributionID (1-3)
+        distribution_id = int(sensor_id)
+
+        distribution_data = {
+            'distributionID': distribution_id,
+            'sensor_id': f'sensor_{sensor_id}',
+            'flowRate': float(flow_rate),
+            'volume': float(volume)
+        }
+
+        serializer = FlowDataSerializer(data=distribution_data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'error': 'Validation failed',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def updateUserFlowData(request):
+    try:
+        user = request.user
+        data = request.data
         flow_data = []
 
         for i in range(1, 4):
-            flow_rate = data.get(f'flowRate{i}')
-            volume = data.get(f'volume{i}')
+            distribution_data = {
+                'user': user.id,
+                'user_id': user.user_id,
+                'distributionID': i,
+                'sensor_id': f'sensor_{i}',
+                'flowRate': data.get(f'flowRate{i}'),
+                'volume': data.get(f'volume{i}')
+            }
             
-            if flow_rate is not None and volume is not None:
-                flow_entry = {
-                    'user': request.user.id,
-                    'user_id': user_id,
-                    'distributionID': i,
-                    'sensor_id': sensor_id,
-                    'flowRate': flow_rate,
-                    'volume': volume
-                }
+            if all(v is not None for v in [distribution_data['flowRate'], distribution_data['volume']]):
+                # Try to update existing record first
+                instance = FlowData.objects.filter(
+                    user=user,
+                    distributionID=i
+                ).first()
                 
-                serializer = FlowDataSerializer(data=flow_entry)
+                if instance:
+                    serializer = FlowDataSerializer(instance, data=distribution_data)
+                else:
+                    serializer = FlowDataSerializer(data=distribution_data)
+
                 if serializer.is_valid():
                     serializer.save()
                     flow_data.append(serializer.data)
@@ -66,10 +110,12 @@ def saveFlowData(request):
                         'details': serializer.errors
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({
-            'message': 'Data saved successfully',
-            'data': flow_data
-        }, status=status.HTTP_201_CREATED)
+        formatted_response = {
+            f'distribution{entry["distributionID"]}': entry 
+            for entry in flow_data
+        }
+
+        return Response(formatted_response, status=status.HTTP_201_CREATED)
 
     except Exception as e:
         return Response({
