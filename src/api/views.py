@@ -113,6 +113,28 @@ def saveSensorData(request):
             remaining_volume__gt=0
         ).first()
 
+        # If no active token, reset flow data to 0 and return early
+        if not active_token:
+            # Reset flow data to 0 if it exists
+            if instance:
+                reset_data = {
+                    'user': assigned_user.id,
+                    'sensor_id': str(sensor_id),
+                    'flowRate': 0,
+                    'volume': 0
+                }
+                serializer = FlowDataSerializer(instance, data=reset_data)
+                if serializer.is_valid():
+                    serializer.save()
+
+            return Response({
+                'error': 'No active token or insufficient balance',
+                'remaining_volume': 0,
+                'flowRate': 0,
+                'volume': 0
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
         # Calculate and update volume used if there's an active token
         if active_token:
             previous_reading = FlowData.objects.filter(
@@ -120,94 +142,89 @@ def saveSensorData(request):
                 sensor_id=str(sensor_id)
             ).order_by('-created').first()
 
-            volume_used = volume
-            if previous_reading:
-                volume_used = max(0, volume - previous_reading.volume)
-
-            if volume_used > 0:
-                active_token.volume_used += Decimal(str(volume_used))
-                active_token.remaining_volume -= Decimal(str(volume_used))
+            # Only process if current volume is greater than previous reading
+            current_volume = volume
+            last_recorded_volume = previous_reading.volume if previous_reading else 0
+            
+            if current_volume > last_recorded_volume:
+                volume_used = current_volume - last_recorded_volume
                 
-                if active_token.remaining_volume <= 0:
-                    # Create final history entry for depleted token
-                    TokenHistory.objects.create(
-                        user=assigned_user,
-                        sensor_id=str(sensor_id),
-                        token_amount=active_token.token_amount,
-                        volume_limit=active_token.volume_limit,
-                        volume_used=active_token.volume_limit,  # Set to full volume limit since depleted
-                        remaining_volume=Decimal('0.0'),
-                        is_active=False,
-                        start_date=active_token.start_date,
-                        last_updated=active_token.last_updated,
-                        end_date=timezone.now()
-                    )
-
-                    # Mark original token as inactive and reset values
-                    active_token.token_amount = Decimal('0.0')
-                    active_token.volume_limit = Decimal('0.0')
-                    active_token.volume_used = Decimal('0.0')
-                    active_token.remaining_volume = Decimal('0.0')
-                    active_token.is_active = False
-                    active_token.end_date = timezone.now()
-                    active_token.save()
-
-                     # Create new active token with reset values
-                    TokenHistory.objects.create(
-                        user=assigned_user,
-                        sensor_id=str(sensor_id),
-                        token_amount=Decimal('0.0'),
-                        volume_limit=Decimal('0.0'),
-                        volume_used=Decimal('0.0'),
-                        remaining_volume=Decimal('0.0'),
-                        is_active=True,
-                        start_date=timezone.now(),  # Added missing comma here
-                        # last_updated=active_token.last_updated,
-                        # end_date=timezone.now()
-                    )
+                if volume_used > 0:
+                    active_token.volume_used += Decimal(str(volume_used))
+                    active_token.remaining_volume -= Decimal(str(volume_used))
                     
-                    # Mark original token as inactive
-                    # active_token.is_active = False
-                    # active_token.end_date = timezone.now()
-                    # active_token.save()
-                    print(f"\nToken depleted for sensor {sensor_id}")
+                    if active_token.remaining_volume <= 0:
+                        # Create final history entry for depleted token
+                        TokenHistory.objects.create(
+                            user=assigned_user,
+                            sensor_id=str(sensor_id),
+                            token_amount=active_token.token_amount,
+                            volume_limit=active_token.volume_limit,
+                            volume_used=active_token.volume_limit,
+                            remaining_volume=Decimal('0.0'),
+                            is_active=False,
+                            start_date=active_token.start_date,
+                            last_updated=active_token.last_updated,
+                            end_date=timezone.now()
+                        )
+
+                        # Reset flow data to 0
+                        reset_data = {
+                            'user': assigned_user.id,
+                            'sensor_id': str(sensor_id),
+                            'flowRate': 0,
+                            'volume': 0
+                        }
+                        if instance:
+                            serializer = FlowDataSerializer(instance, data=reset_data)
+                            if serializer.is_valid():
+                                serializer.save()
+                        
+                        print(f"\nToken depleted for sensor {sensor_id}")
+                        return Response({
+                            'message': 'Token depleted',
+                            'remaining_volume': 0
+                        }, status=status.HTTP_200_OK)
+                    else:
+                        active_token.last_updated = timezone.now()
+                        active_token.save()
+
+            # Save flow data only if active token exists and has remaining volume
+            if active_token.remaining_volume > 0:
+                if instance:
+                    serializer = FlowDataSerializer(instance, data=sensor_data)
                 else:
-                    active_token.last_updated = timezone.now()
-                    active_token.save()
+                    serializer = FlowDataSerializer(data=sensor_data)
 
-        # Save flow data
-        if instance:
-            serializer = FlowDataSerializer(instance, data=sensor_data)
+                if serializer.is_valid():
+                    serializer.save()
+                    response_data = serializer.data
+                    
+                    token_info = {
+                        'token_amount': float(active_token.token_amount),
+                        'remaining_volume': float(active_token.remaining_volume),
+                        'is_active': True
+                    }
+                    response_data.update(token_info)
+                    
+                    print("\nData saved successfully!")
+                    return Response(response_data, status=status.HTTP_201_CREATED)
+                
+                print(f"\nValidation Error: {serializer.errors}")
+                return Response({
+                    'error': 'Validation failed',
+                    'details': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
         else:
-            serializer = FlowDataSerializer(data=sensor_data)
-
-        if serializer.is_valid():
-            serializer.save()
-            response_data = serializer.data
-            
-            # Add token info to response
-            token_info = {
-                'token_amount': float(active_token.token_amount) if active_token else 0.0,
-                'remaining_volume': float(active_token.remaining_volume) if active_token else 0.0,
-                'is_active': bool(active_token and active_token.remaining_volume > 0)
-            }
-            response_data.update(token_info)
-            
-            print("\nData saved successfully!")
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        
-        print(f"\nValidation Error: {serializer.errors}")
-        return Response({
-            'error': 'Validation failed',
-            'details': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'error': 'No active token or insufficient balance',
+                'remaining_volume': 0
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
         print(f"\nException occurred: {str(e)}")
-        return Response({
-            'error': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def rechargeToken(request):
@@ -218,7 +235,6 @@ def rechargeToken(request):
         sensor_id = str(user_index + 1)
 
         token_amount = Decimal(request.data.get('token_amount', '0'))
-
         if token_amount <= 0:
             return Response({
                 'error': 'Invalid token amount'
@@ -227,16 +243,14 @@ def rechargeToken(request):
         volume_to_add = token_amount * 10
         current_time = timezone.now()
 
-        # Get active token
         active_token = TokenHistory.objects.filter(
             user=request.user,
             sensor_id=sensor_id,
-            is_active=True,
-            remaining_volume__gt=0
+            is_active=True
         ).first()
 
-        if active_token:
-            # Create history entry with current state before update
+        if active_token and active_token.remaining_volume > 0:
+            # Save history of previous state before update
             TokenHistory.objects.create(
                 user=request.user,
                 sensor_id=sensor_id,
@@ -244,22 +258,17 @@ def rechargeToken(request):
                 volume_limit=active_token.volume_limit,
                 volume_used=active_token.volume_used,
                 remaining_volume=active_token.remaining_volume,
-                is_active=False,  # Mark history entry as inactive
+                is_active=False,
                 start_date=active_token.start_date,
                 last_updated=active_token.last_updated,
                 end_date=current_time
             )
 
-            # Update existing token with new amounts
-            active_token.token_amount += token_amount
-            active_token.volume_limit += volume_to_add
-            active_token.remaining_volume += volume_to_add
-            active_token.last_updated = current_time
-            active_token.save()
+            
             
             serializer = TokenHistorySerializer(active_token)
         else:
-            # Create new token instance
+            # Create new active token only if none exists
             token_data = {
                 'user': request.user.id,
                 'sensor_id': sensor_id,
@@ -275,7 +284,6 @@ def rechargeToken(request):
             if serializer.is_valid():
                 serializer.save()
             else:
-                print(f"Serializer errors: {serializer.errors}")  # Add debugging
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -283,7 +291,6 @@ def rechargeToken(request):
     except Exception as e:
         print(f"\nError in rechargeToken: {str(e)}")
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
