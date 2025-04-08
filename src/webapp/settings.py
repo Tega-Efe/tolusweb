@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-g#_ts8jb%y@g)+pi(ou0ri#sy0ns9-9s38o)cxo+=+qkg4b&qb'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
-ALLOWED_HOSTS = ['172.20.10.3','192.168.56.1', 'localhost', '127.0.0.1', '.ngrok.io','.ngrok-free.app', 'testserver']
+ALLOWED_HOSTS = ['172.20.10.3','192.168.56.1','192.168.114.236','192.168.56.1', 'localhost', '127.0.0.1', '.ngrok.io','.ngrok-free.app', 'testserver']
 
 # Add CSRF trusted origins for ngrok
 CSRF_TRUSTED_ORIGINS = [
@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'base.apps.BaseConfig',
     'api.apps.ApiConfig',
     'rest_framework',
+    
     'corsheaders',
 ]
 
@@ -161,7 +162,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.AllowAny', 
     ],
 }
 
@@ -171,4 +172,12 @@ REST_FRAMEWORK = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS'
+]
 CORS_ALLOW_HEADERS = ['X-User-ID','Content-Type','X-CSRFToken']

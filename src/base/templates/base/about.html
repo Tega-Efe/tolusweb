@@ -1,80 +1,126 @@
 {% extends 'base/main.html' %}
-
 {% block content %}
 <style>
-    .about-container {
-        max-width: 800px;
-        margin: 25px auto;
-        padding: 50px 20px;
-        background: rgba(6, 70, 99, 0.9);
-        border-radius: 10px;
-        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+    .header {
+        font-size: 30px;
+        font-weight: bold;
+        color: #e8f6ff;
+        text-align: center;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        
     }
 
-    .about-header {
-        color: #FFA500;
-        margin-bottom: 30px;
+    .about-container {
         text-align: center;
-        font-weight: bold;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        padding: 15px;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        width: 95%;
+        max-width: 800px;
+        margin: 25px auto 10px;
+        color: #fff;
     }
 
     .about-content {
-        color: white;
+        text-align: left;
         line-height: 1.6;
+        font-size: min(16px, 4.5vw);
     }
 
     .feature-list {
         list-style: none;
         padding: 0;
-        margin-top: 15px;
+        margin-top: 25px;
     }
 
     .feature-item {
         display: flex;
-        align-items: center;
-        margin: 15px 0;
-        line-height: 1.4;
+        align-items: flex-start;
+        margin: 20px 0;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.07);
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+
+    .feature-item:hover {
+        transform: translateY(-2px);
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 5px 15px rgba(33, 150, 243, 0.2);
     }
 
     .feature-item i {
-        color: #FFA500;
-        margin-right: 12px;
-        font-size: 1.1rem;
+        color: #64b5f6;
+        margin-right: 15px;
+        font-size: 1.5rem;
         flex-shrink: 0;
     }
 
-    .about-header p {
-        font-weight: 500;
+    .feature-text {
+        color: rgba(255, 255, 255, 0.9);
     }
 
-    span{
-        font-weight: 500
+    .feature-text h4 {
+        color: #64b5f6;
+        margin-bottom: 5px;
+        font-size: min(18px, 5vw);
+    }
+
+    .feature-text p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: min(14px, 4vw);
     }
 </style>
 
+<div class="header">Smart Water Distribution Management</div>
+
 <div class="about-container">
-    <h2 class="about-header">About CoreScanner</h2>
-    
     <div class="about-content">
-        <p>CoreScanner is an advanced traffic sign recognition system that uses state-of-the-art machine learning to help identify and classify traffic signs accurately.</p>
+        <p>SWDM is a cutting-edge solution designed to revolutionize how water distribution is managed and monitored. Our platform brings together smart technology and user-friendly features to ensure efficient water management for both consumers and providers.</p>
         
-        <h4 style="color: #FFA500; margin-top: 25px; font-weight: bold;">Key Features:</h4>
         <ul class="feature-list">
             <li class="feature-item">
-                <i class="bi bi-camera-fill"></i>
-                <span>Real-time sign detection through camera</span>
+                <i class="bi bi-water"></i>
+                <div class="feature-text">
+                    <h4>Smart Token System</h4>
+                    <p>Purchase and manage water tokens digitally, converting monetary value into precise water volume allocation with real-time tracking.</p>
+                </div>
             </li>
+            
             <li class="feature-item">
                 <i class="bi bi-graph-up"></i>
-                <span>High accuracy prediction</span>
+                <div class="feature-text">
+                    <h4>Real-time Monitoring</h4>
+                    <p>Track your water usage, flow rate, and remaining balance in real-time through our intuitive dashboard interface.</p>
+                </div>
             </li>
+            
+            <li class="feature-item">
+                <i class="bi bi-arrow-repeat"></i>
+                <div class="feature-text">
+                    <h4>Automated Refills</h4>
+                    <p>Easily recharge your water tokens when running low, ensuring uninterrupted water supply to your household.</p>
+                </div>
+            </li>
+            
             <li class="feature-item">
                 <i class="bi bi-clock-history"></i>
-                <span>History tracking of all analyzed signs</span>
+                <div class="feature-text">
+                    <h4>Usage History</h4>
+                    <p>Access detailed history of water consumption patterns, token purchases, and usage analytics for better resource management.</p>
+                </div>
             </li>
+            
             <li class="feature-item">
                 <i class="bi bi-shield-check"></i>
-                <span>Secure user authentication</span>
+                <div class="feature-text">
+                    <h4>Secure System</h4>
+                    <p>Protected by advanced security measures ensuring safe transactions and personal data protection.</p>
+                </div>
             </li>
         </ul>
     </div>

@@ -28,7 +28,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     user_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     firstname = models.CharField(max_length=200, null=True)
     lastname = models.CharField(max_length=200, null=True)
-    mobile = models.IntegerField(default=234)
+    mobile = models.CharField(max_length=14, help_text="Phone number in format: +2348012345678")  # Changed from IntegerField
     created = models.DateTimeField(auto_now_add=True)
 
     is_active = models.BooleanField(default=True)

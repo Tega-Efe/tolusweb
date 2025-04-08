@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect
 from django.urls import reverse_lazy
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import login, logout
+from django.views.generic import TemplateView
 from django.views.generic.edit import FormView
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -9,6 +10,7 @@ from django.test import Client
 from .forms import CustomUserCreationForm, CustomAuthenticationForm
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic.list import ListView
+from django.middleware.csrf import get_token
 import json
 from api.models import FlowData
 from django.conf import settings
@@ -84,14 +86,6 @@ def logout_view(request):
     # If the request method is neither GET nor POST, return an error response
     return JsonResponse({'status': 'failed'}, status=400)
 
-
-# class Waterflow(ListView):
-#     model = Waterflow
-#     context_object_name = 'waterflows'
-#     template_name = 'base/waterflows.html'
-from django.middleware.csrf import get_token
-
-    
 class Waterflow(LoginRequiredMixin, ListView):
     model = FlowData
     context_object_name = 'waterflows'
@@ -105,10 +99,11 @@ class Waterflow(LoginRequiredMixin, ListView):
         csrf_token = get_token(self.request)
         
         try:
-            # Change the API endpoint to specifically target the user flow data endpoint
-            api_url = self.request.build_absolute_uri('/api/user-flow-data/')
+            # Get flow data
+            api_url = self.request.build_absolute_uri('/api/flow-data/user/')
 
             # Set up session authentication
+            client = Client()
             client.cookies[settings.SESSION_COOKIE_NAME] = self.request.session.session_key
 
             headers = {
@@ -117,30 +112,17 @@ class Waterflow(LoginRequiredMixin, ListView):
                 'Accept': 'application/json',
             }
             
+            # Get flow data with token info
             response = client.get(api_url, headers=headers)
-            
             if response.status_code == 200:
                 data = response.json()
-                print(f"\nUser: {self.request.user.username}")
-                print(f"User ID: {self.request.user.user_id}")
-                print("\nAPI Response Data:")
                 for i in range(1, 4):
-                    distribution = data.get(f'distribution{i}', {})
-                    if distribution:
-                        print(f"\nDistribution {i}:")
-                        print(f"Flow Rate: {distribution.get('flowRate')}")
-                        print(f"Volume: {distribution.get('volume')}")
-                        print(f"Created: {distribution.get('created')}")
+                    sensor = data.get(f'sensor{i}', {})
+                    if sensor:
+                        print(f"\nSensor {i}:")
 
                 context['api_data'] = data
-                context.update(data)
-            else:
-                error_message = f"API Error: Failed to fetch data (Status: {response.status_code})"
-                print(f"\n{error_message}")
-                print(f"Response content: {response.content}")
-                context['error'] = error_message
-                context['api_data'] = None
-                
+
         except Exception as e:
             print(f"\nException occurred: {str(e)}")
             context['error'] = str(e)
@@ -149,42 +131,93 @@ class Waterflow(LoginRequiredMixin, ListView):
         return context
 
     def post(self, request, *args, **kwargs):
+        action = request.POST.get('action')
+        
+        if action == 'recharge':
+            return self.handle_recharge(request)
+        else:
+            return JsonResponse({'error': 'Invalid action'}, status=400)
+
+    def handle_recharge(self, request):
         try:
             csrf_token = get_token(request)
-            api_url = request.build_absolute_uri('/api/flow-data/')
+            api_url = request.build_absolute_uri('/api/token/recharge/')
 
-            # Login the test client with the current user's session
+            # Get token amount from form
+            token_amount = request.POST.get('token_amount')
+
+            if not token_amount:
+                return JsonResponse({
+                    'error': 'Token amount is required'
+                }, status=400)
+
+            # Set up client
+            client = Client()
             client.cookies[settings.SESSION_COOKIE_NAME] = request.session.session_key
-            
+
             headers = {
-                'X-User-ID': str(request.user.user_id),
+                'X-User-ID': str(self.request.user.user_id),
                 'X-CSRFToken': csrf_token,
                 'Content-Type': 'application/json',
             }
 
-            # Format data to match API expectations
-            flow_data = {
-                'sensor_id': 'default'
-            }
-            
-            # Add flow data for each distribution
-            for i in range(1, 4):
-                flow_data[f'flowRate{i}'] = request.POST.get(f'flowRate{i}')
-                flow_data[f'volume{i}'] = request.POST.get(f'volume{i}')
-            
+            # Send recharge request
             response = client.post(
-                api_url, 
-                data=json.dumps(flow_data),  # Serialize to JSON
+                api_url,
+                data=json.dumps({
+                    'token_amount': token_amount
+                }),
+                content_type='application/json',
                 headers=headers
             )
 
-            if response.status_code in [200, 201]:
-                return JsonResponse({'message': 'Data saved successfully'})
+            if response.status_code == 201:
+                return JsonResponse({
+                    'message': 'Token recharged successfully',
+                    'data': response.json()
+                })
             else:
                 return JsonResponse({
-                    'error': 'Failed to save data',
+                    'error': 'Recharge failed',
                     'details': response.json()
                 }, status=400)
 
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
+
+    def get_auth_headers(self):
+        return {
+            'X-User-ID': str(self.request.user.user_id),
+            'X-CSRFToken': get_token(self.request),
+            'Accept': 'application/json',
+        }
+
+class TokenHistoryView(LoginRequiredMixin, TemplateView):
+    template_name = 'base/token_history.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        csrf_token = get_token(self.request)
+        
+        try:
+            token_history_url = self.request.build_absolute_uri('/api/token/history/')
+            client = Client()
+            client.cookies[settings.SESSION_COOKIE_NAME] = self.request.session.session_key
+
+            headers = {
+                'X-User-ID': str(self.request.user.user_id),
+                'X-CSRFToken': csrf_token,
+                'Accept': 'application/json',
+            }
+            
+            response = client.get(token_history_url, headers=headers)
+            if response.status_code == 200:
+                context['token_history'] = response.json()
+            else:
+                context['error'] = 'Failed to fetch token history'
+                
+        except Exception as e:
+            context['error'] = str(e)
+            context['token_history'] = []
+
+        return context

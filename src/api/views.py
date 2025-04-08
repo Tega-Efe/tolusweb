@@ -1,9 +1,11 @@
 from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from .serializers import FlowDataSerializer
-from .models import FlowData
+from .serializers import FlowDataSerializer, TokenHistorySerializer
+from decimal import Decimal
+from .models import FlowData, TokenHistory
 from rest_framework.response import Response
+from django.contrib.auth import get_user_model
 
 from .utils import *
 
@@ -11,152 +13,354 @@ from .utils import *
 def getRoutes(request):
     routes = [
         {
-            'Endpoint': '/flow-data/',
+            'Endpoint': '/api/flow-data/',
             'method': 'GET, POST',
             'body': {
-                'user': 'integer',  # ForeignKey to CustomUser
-                'sensor_id': 'string',  # CharField with default='default'
-                'distributionID': 'integer',  # Required IntegerField
-                'flowRate': 'float',  # Optional FloatField
-                'volume': 'float',  # Optional FloatField
+                'user': 'integer',
+                'sensor_id': 'string',
+                'distributionID': 'integer',
+                'flowRate': 'float',
+                'volume': 'float',
             },
-            'description': 'Gets and saves flow meter data for a single distribution point'
+            'description': 'Create or get single flow meter reading'
         },
         {
-            'Endpoint': '/user-flow-data/',
+            'Endpoint': '/api/flow-data/user/',
             'method': 'GET',
-            'description': 'Gets all flow data for the authenticated user'
+            'description': 'Get all flow data for authenticated user'
+        },
+        {
+            'Endpoint': '/api/token/recharge/',
+            'method': 'POST',
+            'body': {'sensor_id': 'string', 'token_amount': 'decimal'},
+            'description': 'Recharge water token for a sensor'
+        },
+        {
+            'Endpoint': '/api/token/history/',
+            'method': 'GET',
+            'description': 'Get token and usage history for authenticated user'
         }
     ]
     return Response(routes)
 
 from rest_framework import status
+from django.utils import timezone
+
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
 def saveSensorData(request):
     try:
         data = request.data if request.method == 'POST' else request.GET
         
-        # Print incoming request data
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        last_users = User.objects.order_by('-created')[:3]
+        
         print("\n----- Incoming Sensor Data -----")
         print(f"Request Method: {request.method}")
         print(f"Raw Data: {data}")
         
-        sensor_id = data.get('sensor_id')
-        flow_rate = data.get('flowRate')
-        volume = data.get('volume')
+        try:
+            sensor_id = int(data.get('sensor_id', 0))
+            flow_rate = float(data.get('flowRate', 0))
+            volume = float(data.get('volume', 0))
+            
+            if sensor_id <= 0:
+                raise ValueError("sensor_id must be positive")
+                
+        except (TypeError, ValueError) as e:
+            print(f"\nError: Invalid data format - {str(e)}")
+            return Response({
+                'error': 'Invalid data format',
+                'details': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Print extracted values
         print("\n----- Extracted Values -----")
         print(f"Sensor ID: {sensor_id}")
         print(f"Flow Rate: {flow_rate}")
         print(f"Volume: {volume}")
 
-        if not all([sensor_id, flow_rate, volume]):
-            print("\nError: Missing required fields")
+        try:
+            user_index = sensor_id - 1
+            if user_index < 0 or user_index >= len(last_users):
+                raise IndexError(f"No user found for sensor {sensor_id}")
+            assigned_user = last_users[user_index]
+            print(f"\nAssigned User: {assigned_user.username}")
+        except (ValueError, IndexError) as e:
+            print(f"\nError: Invalid sensor_id {sensor_id} - {str(e)}")
             return Response({
-                'error': 'Missing required fields'
+                'error': 'Invalid sensor ID',
+                'details': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Convert sensor_id to distributionID (1-3)
-        distribution_id = int(sensor_id)
-        print(f"\nConverted Distribution ID: {distribution_id}")
-
-        distribution_data = {
-            'distributionID': distribution_id,
-            'sensor_id': f'sensor_{sensor_id}',
-            'flowRate': float(flow_rate),
-            'volume': float(volume)
+        # Save flow data first
+        sensor_data = {
+            'user': assigned_user.id,
+            'sensor_id': str(sensor_id),
+            'flowRate': flow_rate,
+            'volume': volume
         }
-        
-        print("\n----- Processed Data -----")
-        print(f"Distribution Data: {distribution_data}")
 
-        serializer = FlowDataSerializer(data=distribution_data)
+        instance = FlowData.objects.filter(
+            user=assigned_user,
+            sensor_id=str(sensor_id)
+        ).first()
+
+        # Get active token with remaining volume
+        active_token = TokenHistory.objects.filter(
+            user=assigned_user,
+            sensor_id=str(sensor_id),
+            is_active=True,
+            remaining_volume__gt=0
+        ).first()
+
+        # Calculate and update volume used if there's an active token
+        if active_token:
+            previous_reading = FlowData.objects.filter(
+                user=assigned_user,
+                sensor_id=str(sensor_id)
+            ).order_by('-created').first()
+
+            volume_used = volume
+            if previous_reading:
+                volume_used = max(0, volume - previous_reading.volume)
+
+            if volume_used > 0:
+                active_token.volume_used += Decimal(str(volume_used))
+                active_token.remaining_volume -= Decimal(str(volume_used))
+                
+                if active_token.remaining_volume <= 0:
+                    # Create final history entry for depleted token
+                    TokenHistory.objects.create(
+                        user=assigned_user,
+                        sensor_id=str(sensor_id),
+                        token_amount=active_token.token_amount,
+                        volume_limit=active_token.volume_limit,
+                        volume_used=active_token.volume_limit,  # Set to full volume limit since depleted
+                        remaining_volume=Decimal('0.0'),
+                        is_active=False,
+                        start_date=active_token.start_date,
+                        last_updated=active_token.last_updated,
+                        end_date=timezone.now()
+                    )
+
+                    # Mark original token as inactive and reset values
+                    active_token.token_amount = Decimal('0.0')
+                    active_token.volume_limit = Decimal('0.0')
+                    active_token.volume_used = Decimal('0.0')
+                    active_token.remaining_volume = Decimal('0.0')
+                    active_token.is_active = False
+                    active_token.end_date = timezone.now()
+                    active_token.save()
+
+                     # Create new active token with reset values
+                    TokenHistory.objects.create(
+                        user=assigned_user,
+                        sensor_id=str(sensor_id),
+                        token_amount=Decimal('0.0'),
+                        volume_limit=Decimal('0.0'),
+                        volume_used=Decimal('0.0'),
+                        remaining_volume=Decimal('0.0'),
+                        is_active=True,
+                        start_date=timezone.now(),  # Added missing comma here
+                        # last_updated=active_token.last_updated,
+                        # end_date=timezone.now()
+                    )
+                    
+                    # Mark original token as inactive
+                    # active_token.is_active = False
+                    # active_token.end_date = timezone.now()
+                    # active_token.save()
+                    print(f"\nToken depleted for sensor {sensor_id}")
+                else:
+                    active_token.last_updated = timezone.now()
+                    active_token.save()
+
+        # Save flow data
+        if instance:
+            serializer = FlowDataSerializer(instance, data=sensor_data)
+        else:
+            serializer = FlowDataSerializer(data=sensor_data)
+
         if serializer.is_valid():
             serializer.save()
+            response_data = serializer.data
+            
+            # Add token info to response
+            token_info = {
+                'token_amount': float(active_token.token_amount) if active_token else 0.0,
+                'remaining_volume': float(active_token.remaining_volume) if active_token else 0.0,
+                'is_active': bool(active_token and active_token.remaining_volume > 0)
+            }
+            response_data.update(token_info)
+            
             print("\nData saved successfully!")
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            print(f"\nValidation Error: {serializer.errors}")
-            return Response({
-                'error': 'Validation failed',
-                'details': serializer.errors
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        
+        print(f"\nValidation Error: {serializer.errors}")
+        return Response({
+            'error': 'Validation failed',
+            'details': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
     except Exception as e:
         print(f"\nException occurred: {str(e)}")
         return Response({
             'error': str(e)
         }, status=status.HTTP_400_BAD_REQUEST)
-
+    
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def updateUserFlowData(request):
+def rechargeToken(request):
     try:
-        user = request.user
-        data = request.data
-        flow_data = []
+        User = get_user_model()
+        last_users = list(User.objects.order_by('-created')[:3])
+        user_index = last_users.index(request.user)
+        sensor_id = str(user_index + 1)
 
-        for i in range(1, 4):
-            distribution_data = {
-                'user': user.id,
-                'user_id': user.user_id,
-                'distributionID': i,
-                'sensor_id': f'sensor_{i}',
-                'flowRate': data.get(f'flowRate{i}'),
-                'volume': data.get(f'volume{i}')
-            }
+        token_amount = Decimal(request.data.get('token_amount', '0'))
+
+        if token_amount <= 0:
+            return Response({
+                'error': 'Invalid token amount'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        volume_to_add = token_amount * 10
+        current_time = timezone.now()
+
+        # Get active token
+        active_token = TokenHistory.objects.filter(
+            user=request.user,
+            sensor_id=sensor_id,
+            is_active=True,
+            remaining_volume__gt=0
+        ).first()
+
+        if active_token:
+            # Create history entry with current state before update
+            TokenHistory.objects.create(
+                user=request.user,
+                sensor_id=sensor_id,
+                token_amount=active_token.token_amount,
+                volume_limit=active_token.volume_limit,
+                volume_used=active_token.volume_used,
+                remaining_volume=active_token.remaining_volume,
+                is_active=False,  # Mark history entry as inactive
+                start_date=active_token.start_date,
+                last_updated=active_token.last_updated,
+                end_date=current_time
+            )
+
+            # Update existing token with new amounts
+            active_token.token_amount += token_amount
+            active_token.volume_limit += volume_to_add
+            active_token.remaining_volume += volume_to_add
+            active_token.last_updated = current_time
+            active_token.save()
             
-            if all(v is not None for v in [distribution_data['flowRate'], distribution_data['volume']]):
-                # Try to update existing record first
-                instance = FlowData.objects.filter(
-                    user=user,
-                    distributionID=i
-                ).first()
-                
-                if instance:
-                    serializer = FlowDataSerializer(instance, data=distribution_data)
-                else:
-                    serializer = FlowDataSerializer(data=distribution_data)
+            serializer = TokenHistorySerializer(active_token)
+        else:
+            # Create new token instance
+            token_data = {
+                'user': request.user.id,
+                'sensor_id': sensor_id,
+                'token_amount': token_amount,
+                'volume_limit': volume_to_add,
+                'remaining_volume': volume_to_add,
+                'volume_used': Decimal('0.0'),
+                'is_active': True,
+                'start_date': current_time,
+                'last_updated': current_time
+            }
+            serializer = TokenHistorySerializer(data=token_data)
+            if serializer.is_valid():
+                serializer.save()
+            else:
+                print(f"Serializer errors: {serializer.errors}")  # Add debugging
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-                if serializer.is_valid():
-                    serializer.save()
-                    flow_data.append(serializer.data)
-                else:
-                    return Response({
-                        'error': f'Validation failed for distribution {i}',
-                        'details': serializer.errors
-                    }, status=status.HTTP_400_BAD_REQUEST)
-
-        formatted_response = {
-            f'distribution{entry["distributionID"]}': entry 
-            for entry in flow_data
-        }
-
-        return Response(formatted_response, status=status.HTTP_201_CREATED)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     except Exception as e:
-        return Response({
-            'error': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
+        print(f"\nError in rechargeToken: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def getUserFlowData(request):
     try:
-        # Get latest readings for each distribution point
-        user_data = FlowData.objects.filter(user=request.user)
-        latest_readings = {}
+        # Get user's sensor ID by finding their position in last 3 users
+        User = get_user_model()
+        last_users = list(User.objects.order_by('-created')[:3])  # Convert QuerySet to list
+        try:
+            user_index = last_users.index(request.user)
+            sensor_id = str(user_index + 1)
+        except ValueError:
+            return Response({
+                'error': 'User not in last 3 registered users'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get flow and token data for user's sensor
+        user_data = FlowData.objects.filter(
+            user=request.user,
+            sensor_id=sensor_id
+        ).first()
         
-        for i in range(1, 4):
-            reading = user_data.filter(distributionID=i).first()
-            if reading:
-                latest_readings[f'distribution{i}'] = FlowDataSerializer(reading).data
+        active_token = TokenHistory.objects.filter(
+            user=request.user,
+            sensor_id=sensor_id,
+            is_active=True,
+            remaining_volume__gt=0
+        ).first()
+        
+        response_data = {}
+        
+        if user_data:
+            reading_data = FlowDataSerializer(user_data).data
+            # Set token info with dates
+            token_info = {
+                'token_amount': float(active_token.token_amount) if active_token else 0.0,
+                'remaining_volume': float(active_token.remaining_volume) if active_token else 0.0,
+                'is_active': bool(active_token and active_token.remaining_volume > 0),
+                'start_date': active_token.start_date if active_token else None,
+                'last_updated': active_token.last_updated if active_token else None,
+                'end_date': active_token.end_date if active_token else None
+            }
+            reading_data.update(token_info)
+            response_data[f'sensor{sensor_id}'] = reading_data
                 
-        return Response(latest_readings, status=status.HTTP_200_OK)
+        return Response(response_data, status=status.HTTP_200_OK)
         
     except Exception as e:
-        return Response({
-            'error': str(e)
-        }, status=status.HTTP_400_BAD_REQUEST)
+        print(f"\nError in getUserFlowData: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def getTokenHistory(request):
+    try:
+        # Get user's sensor ID
+        User = get_user_model()
+        last_users = list(User.objects.order_by('-created')[:3])  # Convert QuerySet to list
+        try:
+            user_index = last_users.index(request.user)
+            sensor_id = str(user_index + 1)
+        except ValueError:
+            return Response({
+                'error': 'User not in last 3 registered users'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get ALL token history for user's sensor, not just active ones
+        history = TokenHistory.objects.filter(
+            user=request.user,
+            sensor_id=sensor_id
+        ).order_by('-start_date')
+        
+        if not history.exists():
+            return Response([], status=status.HTTP_200_OK)
+            
+        serializer = TokenHistorySerializer(history, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        print(f"\nError in getTokenHistory: {str(e)}")
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

@@ -1,0 +1,150 @@
+{% extends 'base/main.html' %}
+{% block content %}
+
+<style>
+    .history-container {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .page-title {
+        color: white;
+        font-size: 2rem;
+        margin-bottom: 30px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .history-card {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        transition: transform 0.2s;
+    }
+
+    .history-card:hover {
+        transform: translateY(-5px);
+    }
+
+    .token-info {
+        color: #e8f6ff;
+    }
+
+    .value {
+        color: #64b5f6;
+        font-weight: bold;
+    }
+
+    .timeline {
+        border-left: 2px solid rgba(100, 181, 246, 0.5);
+        padding-left: 20px;
+        margin: 15px 0;
+    }
+
+    .timestamp {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+
+    .status-active {
+        background: rgba(76, 175, 80, 0.2);
+        color: #81c784;
+        border: 2px solid rgba(76, 175, 80, 0.3);
+    }
+
+    .status-inactive {
+        background: rgba(244, 67, 54, 0.2);
+        color: #e57373;
+        border: 2px solid rgba(244, 67, 54, 0.3);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    .error-message {
+        background: rgba(244, 67, 54, 0.1);
+        border: 1px solid rgba(244, 67, 54, 0.3);
+        color: #ff8a80;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+</style>
+
+<div class="history-container">
+    <h2 class="page-title">Token History</h2>
+
+    {% if error %}
+        <div class="error-message">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            {{ error }}
+        </div>
+    {% endif %}
+
+    {% if token_history %}
+        <div class="row">
+            {% for entry in token_history %}
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="history-card">
+                        <div class="token-info">
+                            <h5>Sensor {{ entry.sensor_id }}</h5>
+                            <p>Token Amount: <span class="value">{{ entry.token_amount|floatformat:2 }}</span></p>
+                            <p>Volume Limit: <span class="value">{{ entry.volume_limit|floatformat:2 }} L</span></p>
+                            <p>Volume Used: <span class="value">{{ entry.volume_used|floatformat:2 }} L</span></p>
+                            <p>Remaining: <span class="value">{{ entry.remaining_volume|floatformat:2 }} L</span></p>
+                        </div>
+
+                        <div class="timeline">
+                            {% if entry.start_date %}
+                                <p class="timestamp">
+                                    <i class="bi bi-clock-history"></i> Created: 
+                                    {{ entry.start_date }}
+                                </p>
+                            {% endif %}
+                            {% if entry.last_updated %}
+                                <p class="timestamp">
+                                    <i class="bi bi-arrow-clockwise"></i> Last Updated: 
+                                    {{ entry.last_updated }}
+                                </p>
+                            {% endif %}
+                            {% if entry.end_date %}
+                                <p class="timestamp text-danger">
+                                    <i class="bi bi-hourglass-bottom"></i> Depleted: 
+                                    {{ entry.end_date }}
+                                </p>
+                            {% endif %}
+                        </div>
+
+                        <span class="status-badge {% if entry.is_active %}status-active{% else %}status-inactive{% endif %}">
+                            {{ entry.is_active|yesno:"Active,Depleted" }}
+                        </span>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <i class="bi bi-clock-history fs-1 mb-3"></i>
+            <h4>No Token History Available</h4>
+            <p>Your token transaction history will appear here once you make a purchase.</p>
+        </div>
+    {% endif %}
+</div>
+
+{% endblock content %}

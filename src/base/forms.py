@@ -34,6 +34,30 @@ class CustomUserCreationForm(UserCreationForm):
 
         return password2
 
+
+    def clean_mobile(self):
+        mobile = self.cleaned_data.get('mobile')
+        if mobile:
+            # Remove any spaces or special characters
+            mobile = ''.join(filter(str.isdigit, mobile))
+            
+            # Check if number starts with 0 and remove it
+            if mobile.startswith('0'):
+                mobile = mobile[1:]
+            
+            # Add +234 prefix if not present
+            if not mobile.startswith('234'):
+                mobile = '234' + mobile
+            
+            # Add + to the beginning
+            mobile = '+' + mobile
+            
+            # Validate length and format
+            if not re.match(r'^\+234[789][01]\d{8}$', mobile):
+                raise forms.ValidationError('Enter a valid Nigerian phone number')
+            
+        return mobile
+
     def save(self, commit=True):
         user = super().save(commit=False)
         if not user.username:  # Ensure username is set from email

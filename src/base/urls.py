@@ -9,4 +9,6 @@ urlpatterns = [
   path('about/', views.about, name='about'),
   path('', views.Waterflow.as_view(), name='waterflow'),
   path('waterflow/', views.Waterflow.as_view(), name='waterflow'),
+  path('token-history/', views.TokenHistoryView.as_view(), name='token-history-page'),
+
 ]
